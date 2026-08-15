@@ -3,13 +3,20 @@ fx_fetcher.py
 Fetches live currency exchange rates and prepares them for the
 Bellman-Ford arbitrage detector in Phase 2.
 """
-
+import os
 import time
 import requests
+from dotenv import load_dotenv
+load_dotenv()
 
 # The currencies we care about. Add more here later if you want
 # a bigger graph — just make sure Frankfurter supports them.
-CURRENCIES = ["USD", "EUR", "GBP", "JPY", "CHF", "AUD", "CAD", "NZD"]
+CURRENCIES = [
+    "AUD", "BRL", "CAD", "CHF", "CNY", "CZK", "DKK",
+    "EUR", "GBP", "HKD", "HUF", "IDR", "ILS", "INR", "ISK",
+    "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN",
+    "RON", "SEK", "SGD", "THB", "TRY", "USD", "ZAR"
+]
 
 
 
@@ -26,6 +33,29 @@ def fetch_rates(base="USD"):
     data = response.json()
     return data["rates"]
 
+def fetch_from_exchangerate_api(base="USD"):
+    """Fallback data source using ExchangeRate-API."""
+    api_key = os.getenv("EXCHANGERATE_API_KEY")
+    if not api_key:
+        raise ValueError("EXCHANGERATE_API_KEY not set")
+
+    url = f"https://v6.exchangerate-api.com/v6/{api_key}/latest/{base}"
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    data = response.json()
+    return data["conversion_rates"]
+
+def fetch_rates_resilient(base="USD"):
+    """Try Frankfurter first; fall back to ExchangeRate-API if it fails."""
+    try:
+        return fetch_rates_with_retry(base)
+    except Exception as e:
+        print(f"  Frankfurter failed for {base}, trying fallback: {e}")
+        try:
+            return fetch_from_exchangerate_api(base)
+        except Exception as e2:
+            print(f"  Fallback also failed for {base}: {e2}")
+            return {}
 
 def fetch_rates_with_retry(base="USD", retries=3):
     """
@@ -58,7 +88,7 @@ def fetch_all_rates():
 
     for base in CURRENCIES:
         print(f"Fetching rates for {base}...")
-        rates = fetch_rates_with_retry(base)
+        rates = fetch_rates_resilient(base)
 
         for target, rate in rates.items():
             if target in CURRENCIES:
