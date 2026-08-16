@@ -3,13 +3,55 @@ app.py
 The FastAPI web layer for ArbiGraph. Exposes detected
 arbitrage cycles over HTTP for other programs to consume.
 """
-
+import asyncio
+from src.fx_fetcher import get_clean_rates
+from src.graph_builder import build_graph
+from src.bellman_ford import bellman_ford, cycle_profit_percent
+from src.database import log_cycle, was_recently_logged
 from fastapi import FastAPI, HTTPException, Header, Depends, WebSocket
 from src.database import init_db, get_recent_cycles
-import asyncio
+import os
+from dotenv import load_dotenv
 
 app = FastAPI(title="ArbiGraph API")
-VALID_API_KEYS = {"test-key-123"}  # replace with real key storage later
+
+
+load_dotenv()
+
+VALID_API_KEYS = {os.getenv("VALID_API_KEYS", "test-key-123")}
+
+MIN_PROFIT_THRESHOLD = 0.05
+CHECK_INTERVAL_SECONDS = 30
+
+async def background_monitor():
+    """Runs continuously in the background, inside the same process as the API."""
+    while True:
+        try:
+            conn = init_db()
+            rates = get_clean_rates()
+
+            if rates:
+                graph = build_graph(rates)
+                for start_currency in graph:
+                    cycle = bellman_ford(graph, start_currency)
+                    if cycle:
+                        profit = cycle_profit_percent(graph, cycle)
+                        path_str = " → ".join(cycle)
+                        if profit >= MIN_PROFIT_THRESHOLD and not was_recently_logged(conn, path_str):
+                            log_cycle(conn, cycle, profit)
+                            print(f"[background] Logged: {path_str} ({profit:.4f}%)")
+                        break
+
+            conn.close()
+        except Exception as e:
+            print(f"[background] Error during check: {e}")
+
+        await asyncio.sleep(CHECK_INTERVAL_SECONDS)
+
+@app.on_event("startup")
+async def start_background_monitor():
+    asyncio.create_task(background_monitor())
+
 
 
 def check_api_key(x_api_key: str = Header(None)):
@@ -18,6 +60,8 @@ def check_api_key(x_api_key: str = Header(None)):
 
 
 @app.get("/")
+
+
 def root():
     return {"message": "ArbiGraph API is running."}
 
