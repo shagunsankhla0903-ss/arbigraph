@@ -9,12 +9,18 @@ from src.graph_builder import build_graph
 from src.bellman_ford import bellman_ford, cycle_profit_percent
 from src.database import log_cycle, was_recently_logged
 from fastapi import FastAPI, HTTPException, Header, Depends, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
 from src.database import init_db, get_recent_cycles
 import os
 from dotenv import load_dotenv
 
 app = FastAPI(title="ArbiGraph API")
-
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # fine for a learning project; restrict this in real production
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 load_dotenv()
 
