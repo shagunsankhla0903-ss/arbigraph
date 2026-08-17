@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>ArbiGraph Dashboard</title>
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 2rem; }
+    h1 { color: #58a6ff; }
+    .cycle { background: #161b22; border: 1px solid #30363d; border-radius: 8px;
+             padding: 1rem; margin-bottom: 0.75rem; }
+    .profit { color: #3fb950; font-weight: bold; }
+    .empty { color: #8b949e; }
+    input { background: #161b22; border: 1px solid #30363d; color: #c9d1d9;
+            padding: 0.5rem; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>ArbiGraph Live Dashboard</h1>
+  <p>API URL: <input id="apiUrl" value="https://arbigraph-production.up.railway.app" size="50"></p>
+  <p>API Key: <input id="apiKey" value="my-real-secret-key-2026" size="30"></p>
+  <button onclick="loadCycles()">Refresh</button>
+
+  <div id="results"></div>
+
+  <h2 style="color:#58a6ff; margin-top: 2rem;">Currency Graph</h2>
+  <div id="graph" style="height: 400px; border: 1px solid #30363d; border-radius: 8px; margin-top: 0.5rem;"></div>
+
+  <script>
+    function renderGraph(cycles) {
+      const nodes = new Map();
+      const edges = [];
+
+      cycles.forEach(c => {
+        const path = c.path.split(' → ');
+        for (let i = 0; i < path.length - 1; i++) {
+          nodes.set(path[i], { id: path[i], label: path[i] });
+          nodes.set(path[i + 1], { id: path[i + 1], label: path[i + 1] });
+          edges.push({ from: path[i], to: path[i + 1], arrows: 'to' });
+        }
+      });
+
+      const data = {
+        nodes: Array.from(nodes.values()),
+        edges: edges
+      };
+
+      const options = {
+        nodes: {
+          shape: 'circle',
+          color: { background: '#161b22', border: '#58a6ff' },
+          font: { color: '#c9d1d9', size: 16 }
+        },
+        edges: {
+          color: '#3fb950',
+          width: 2
+        },
+        physics: {
+          stabilization: true
+        }
+      };
+
+      new vis.Network(document.getElementById('graph'), data, options);
+    }
+
+    async function loadCycles() {
+      const apiUrl = document.getElementById('apiUrl').value;
+      const apiKey = document.getElementById('apiKey').value;
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = '<p>Loading...</p>';
+
+      try {
+        const response = await fetch(`${apiUrl}/v1/cycles`, {
+          headers: { 'X-API-Key': apiKey }
+        });
+        const data = await response.json();
+
+        if (!data.cycles || data.cycles.length === 0) {
+          resultsDiv.innerHTML = '<p class="empty">No cycles logged yet.</p>';
+          return;
+        }
+
+        resultsDiv.innerHTML = data.cycles.map(c => `
+          <div class="cycle">
+            <div>${c.path}</div>
+            <div class="profit">+${c.profit_pct.toFixed(4)}%</div>
+            <div style="color:#8b949e; font-size: 0.85rem;">${c.timestamp}</div>
+          </div>
+        `).join('');
+
+        renderGraph(data.cycles);
+      } catch (err) {
+        resultsDiv.innerHTML = `<p style="color:#f85149;">Error: ${err.message}</p>`;
+      }
+    }
+
+    loadCycles();
+    setInterval(loadCycles, 30000);
+  </script>
+</body>
+</html>
