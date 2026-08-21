@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.database import init_db, get_recent_cycles
 import os
 from dotenv import load_dotenv
+import time
+from src.fx_fetcher import CURRENCIES
 
 app = FastAPI(title="ArbiGraph API")
 app.add_middleware(
@@ -113,3 +115,18 @@ async def stream_cycles(websocket: WebSocket):
             await asyncio.sleep(5)
     except Exception:
         await websocket.close()
+
+# Simple in-memory cache so we don't hit the FX API on every click
+_rates_cache = {"data": None, "timestamp": 0}
+CACHE_TTL_SECONDS = 60
+
+@app.get("/v1/rates")
+def get_rates(_: None = Depends(check_api_key)):
+    now = time.time()
+    if _rates_cache["data"] is None or (now - _rates_cache["timestamp"]) > CACHE_TTL_SECONDS:
+        _rates_cache["data"] = get_clean_rates()
+        _rates_cache["timestamp"] = now
+    return {
+        "currencies": sorted(CURRENCIES),
+        "rates": _rates_cache["data"]
+    }
